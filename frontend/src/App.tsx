@@ -5,7 +5,7 @@ export default function App() {
   const [result, setResult] = useState("");
 
   const predict = async () => {
-    const res = await fetch("TON_URL_RENDER/predict", {
+    const res = await fetch("https://basket-predict.onrender.com/predict", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
