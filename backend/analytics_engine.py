@@ -42,6 +42,9 @@ class EngineResult:
     away_std:             float = 10.0
     context:              MatchContext = field(default_factory=MatchContext)
     confidence:           float = 0.65
+    # ── NEW : scores de forme pondérés par time-decay ─────────
+    form_score_home:      float = 0.0
+    form_score_away:      float = 0.0
 
 
 # =============================================================
@@ -128,20 +131,34 @@ def expected_score_from_ppp(ppp: float, possessions: float) -> float:
 
 
 # =============================================================
-# 4. TIME-DECAY
+# 4. TIME-DECAY  ← maintenant branché sur recent_form
 # =============================================================
 
 def time_decay_weights(n_games: int, alpha: float = TIME_DECAY_ALPHA) -> np.ndarray:
+    """Poids exponentiels décroissants — le match le plus récent pèse le plus."""
     weights = np.array([alpha ** i for i in range(n_games - 1, -1, -1)])
     return weights / weights.sum()
 
 
 def weighted_average(values: list[float], alpha: float = TIME_DECAY_ALPHA) -> float:
+    """Moyenne pondérée par time-decay sur une liste de valeurs (ordre chronologique)."""
     if not values:
         return 0.0
     n       = len(values)
     weights = time_decay_weights(n, alpha)
     return float(np.dot(weights, values[-n:]))
+
+
+def compute_form_score(team: TeamStats) -> float:
+    """
+    Calcule le score de forme à partir des différentiels récents (recent_form).
+    Si recent_form est vide, on estime via net_rating comme proxy.
+    Retourne un float en points (ex: +4.2 = bonne forme, -3.1 = mauvaise forme).
+    """
+    if team.recent_form:
+        return round(weighted_average(team.recent_form), 2)
+    # Fallback : net_rating est déjà une approximation du différentiel moyen
+    return round(team.net_rating * 0.5, 2)
 
 
 # =============================================================
@@ -254,14 +271,29 @@ def run_analytics(home: TeamStats, away: TeamStats) -> EngineResult:
     result.home_std = round(10.0 * pace_factor, 2)
     result.away_std = round(10.0 * pace_factor, 2)
 
+    # ── NEW : Time-decay sur recent_form ──────────────────────
+    result.form_score_home = compute_form_score(home)
+    result.form_score_away = compute_form_score(away)
+
+    # Ajustement des scores attendus par la forme récente (pondération légère)
+    FORM_WEIGHT = 0.25
+    result.home_expected_score = round(
+        result.home_expected_score + FORM_WEIGHT * result.form_score_home, 1
+    )
+    result.away_expected_score = round(
+        result.away_expected_score + FORM_WEIGHT * result.form_score_away, 1
+    )
+
     # Confiance
     elo_gap    = abs(home.elo_rating - away.elo_rating)
     ff_gap     = abs(result.four_factors_edge)
     score_gap  = abs(result.home_expected_score - result.away_expected_score)
+    form_gap   = abs(result.form_score_home - result.form_score_away)
     raw_conf   = (
-        0.40 * min(elo_gap / 200.0,  1.0)
-      + 0.30 * min(ff_gap / 0.10,   1.0)
-      + 0.30 * min(score_gap / 15.0, 1.0)
+        0.35 * min(elo_gap   / 200.0, 1.0)
+      + 0.25 * min(ff_gap    / 0.10,  1.0)
+      + 0.25 * min(score_gap / 15.0,  1.0)
+      + 0.15 * min(form_gap  / 10.0,  1.0)   # NEW : forme contribue à la confiance
     )
     result.confidence = round(0.50 + raw_conf * 0.40, 3)
 
