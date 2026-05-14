@@ -5,7 +5,6 @@ from pydantic import BaseModel, Field
 from typing import Optional, List
 
 
-# ── Input utilisateur ─────────────────────────────────────────
 class MatchRequest(BaseModel):
     team_home:  str           = Field(..., example="Los Angeles Lakers")
     team_away:  str           = Field(..., example="Boston Celtics")
@@ -13,37 +12,34 @@ class MatchRequest(BaseModel):
     match_date: Optional[str] = Field(None,  example="2025-05-15")
 
 
-# ── Stats d'une équipe ────────────────────────────────────────
 class TeamStats(BaseModel):
     team_name:    str
-    elo_rating:   float = 1500.0
-    net_rating:   float = 0.0
-    pace:         float = 100.0
-    efg_pct:      float = 0.50
-    tov_pct:      float = 13.0
-    orb_pct:      float = 25.0
-    ftr:          float = 0.25
-    ts_pct:       float = 0.55
-    ppp:          float = 1.10
-    rest_days:    int   = 2
-    back_to_back: bool  = False
+    elo_rating:   float       = 1500.0
+    net_rating:   float       = 0.0
+    pace:         float       = 100.0
+    efg_pct:      float       = 0.50
+    tov_pct:      float       = 13.0
+    orb_pct:      float       = 25.0
+    ftr:          float       = 0.25
+    ts_pct:       float       = 0.55
+    ppp:          float       = 1.10
+    rest_days:    int         = 2
+    back_to_back: bool        = False
+    recent_form:  List[float] = Field(default_factory=list)
 
 
-# ── Rapport blessures ─────────────────────────────────────────
 class InjuryReport(BaseModel):
     player_name: str
     status:      str
     impact_pts:  float = 0.0
 
 
-# ── Four Factors ──────────────────────────────────────────────
 class FourFactorsResult(BaseModel):
     home_score: float
     away_score: float
     advantage:  str
 
 
-# ── Monte Carlo ───────────────────────────────────────────────
 class MonteCarloResult(BaseModel):
     home_win_pct:   float
     away_win_pct:   float
@@ -54,7 +50,6 @@ class MonteCarloResult(BaseModel):
     simulations:    int
 
 
-# ── Scénario de score ─────────────────────────────────────────
 class ScoreScenario(BaseModel):
     label:      str
     score_home: int
@@ -62,7 +57,6 @@ class ScoreScenario(BaseModel):
     confidence: float
 
 
-# ── Recommandation pari ───────────────────────────────────────
 class BetRecommendation(BaseModel):
     label:        str
     bet_type:     str
@@ -72,7 +66,24 @@ class BetRecommendation(BaseModel):
     is_value_bet: bool = False
 
 
-# ── Réponse complète ──────────────────────────────────────────
+class MLResult(BaseModel):
+    home_win_prob:   float
+    away_win_prob:   float
+    model_used:      str
+    top_features:    List[str] = []
+    form_score_home: float     = 0.0
+    form_score_away: float     = 0.0
+
+
+# ── NEW : cotes en temps réel ─────────────────────────────────
+class LiveOdds(BaseModel):
+    odds_home:  float            # américain, ex: -150
+    odds_away:  float            # américain, ex: +130
+    bookmaker:  str
+    implied_home: float          # probabilité implicite home
+    implied_away: float          # probabilité implicite away
+
+
 class PredictionResponse(BaseModel):
     team_home:    str
     team_away:    str
@@ -89,7 +100,11 @@ class PredictionResponse(BaseModel):
     monte_carlo:  MonteCarloResult
     four_factors: FourFactorsResult
     scenarios:    List[ScoreScenario]
+    ml_result:    Optional[MLResult]  = None
 
-    bet_recommendations:  List[BetRecommendation]
-    confidence_global:    float
-    data_sources:         List[str] = []
+    # ── NEW ───────────────────────────────────────────────────
+    live_odds:    Optional[LiveOdds]  = None
+
+    bet_recommendations: List[BetRecommendation]
+    confidence_global:   float
+    data_sources:        List[str] = []
