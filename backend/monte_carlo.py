@@ -42,6 +42,13 @@ def run_monte_carlo(
     scores_home += elo_noise
     scores_away -= elo_noise
 
+    # ── NEW : bruit de forme (time-decay) ─────────────────────
+    # La forme récente ajoute un biais faible mais réel sur la variance
+    form_noise_home = rng.normal(engine.form_score_home * 0.1, 1.5, n_sims)
+    form_noise_away = rng.normal(engine.form_score_away * 0.1, 1.5, n_sims)
+    scores_home += form_noise_home
+    scores_away += form_noise_away
+
     # Plancher réaliste
     scores_home = np.maximum(scores_home, 70.0)
     scores_away = np.maximum(scores_away, 70.0)
@@ -97,21 +104,29 @@ def build_score_scenarios(
 
 
 # =============================================================
-# 3. BLEND PROBABILITÉS
+# 3. BLEND PROBABILITÉS  ← poids mis à jour avec ML
 # =============================================================
 
 def blend_win_probability(
-    mc:     MonteCarloResult,
-    engine: EngineResult,
+    mc:           MonteCarloResult,
+    engine:       EngineResult,
+    ml_prob_home: float = 0.50,
 ) -> tuple[float, float]:
-
+    """
+    Nouvelle pondération :
+      40 % Monte Carlo  (simulations)
+      25 % Elo          (force historique)
+      20 % Four Factors (Dean Oliver)
+      15 % ML XGBoost   (apprentissage supervisé)
+    """
     ff_prob_home = 0.50 + engine.four_factors_edge * 1.5
     ff_prob_home = max(0.05, min(0.95, ff_prob_home))
 
     p_home = (
-        0.50 * mc.home_win_pct
-      + 0.30 * engine.elo_win_prob_home
+        0.40 * mc.home_win_pct
+      + 0.25 * engine.elo_win_prob_home
       + 0.20 * ff_prob_home
+      + 0.15 * ml_prob_home              # NEW
     )
     return round(p_home, 4), round(1.0 - p_home, 4)
 
@@ -121,10 +136,6 @@ def blend_win_probability(
 # =============================================================
 
 def _normal_cdf(x: float) -> float:
-    """
-    Approximation CDF normale standard via numpy.
-    Remplace scipy.stats.norm.cdf()
-    """
     return float(0.5 * (1.0 + np.sign(x) * np.sqrt(
         1.0 - np.exp(-2.0 / np.pi * x ** 2)
     )))
@@ -237,10 +248,11 @@ def run_full_simulation(
     odds_home: float = -110,
     odds_away: float = -110,
     n_sims:    int   = MONTE_CARLO_SIMS,
+    ml_prob_home: float = 0.50,        # NEW : injecté depuis main.py
 ) -> dict:
 
     mc                   = run_monte_carlo(engine, n_sims=n_sims)
-    prob_home, prob_away = blend_win_probability(mc, engine)
+    prob_home, prob_away = blend_win_probability(mc, engine, ml_prob_home)
     mc.home_win_pct      = prob_home
     mc.away_win_pct      = prob_away
     scenarios            = build_score_scenarios(mc, engine)
@@ -255,5 +267,4 @@ def run_full_simulation(
         "bets":        bets,
         "prob_home":   prob_home,
         "prob_away":   prob_away,
-    }
-
+        }
