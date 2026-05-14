@@ -1,6 +1,7 @@
 # ============================================================
 # data_ingestion.py — Serper + Jina + Gemini + API réelles
 # ============================================================
+from typing import Optional
 import httpx
 import json
 import asyncio
