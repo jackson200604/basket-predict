@@ -43,8 +43,8 @@ NBA_STATS_HEADERS = {
     "x-nba-stats-origin": "stats",
     "x-nba-stats-token":  "true",
 }
-# Saison courante (format NBA : "2025-26")
-NBA_CURRENT_SEASON   = "2025-26"
+# Saison courante (format NBA : "2024-25")
+NBA_CURRENT_SEASON   = "2024-25"
 NBA_SEASON_TYPE      = "Regular Season"
 # Nombre de derniers matchs pour recent_form
 NBA_FORM_LAST_N      = 10
