@@ -6,7 +6,7 @@ NBA · EuroLeague · NCAA · BSL · LNB
 ## Stack
 - **Backend** : FastAPI + Python
 - **Frontend** : Streamlit
-- **IA** : Google Gemini 1.5 Flash
+- **IA** : Google Gemini 3 Flash
 - **Recherche** : Serper.dev + Jina AI Reader
 - **Calculs** : NumPy · SciPy · Pandas
 - **Déploiement** : Render + Streamlit Cloud
