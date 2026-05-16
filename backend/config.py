@@ -16,10 +16,10 @@ JINA_BASE_URL   = "https://r.jina.ai/"
 # ── NEW : The Odds API ────────────────────────────────────────
 ODDS_API_KEY    = os.getenv("ODDS_API_KEY", "")
 ODDS_API_BASE   = "https://api.the-odds-api.com/v4"
-ODDS_SPORT      = "basketball_nba"          # slug NBA sur The Odds API
-ODDS_REGIONS    = "us"                      # us | uk | eu | au
-ODDS_MARKETS    = "h2h"                     # moneyline
-ODDS_BOOKMAKERS = ["draftkings", "fanduel", "betmgm"]  # priorité consensus
+ODDS_SPORT      = "basketball_nba"
+ODDS_REGIONS    = "us"
+ODDS_MARKETS    = "h2h"
+ODDS_BOOKMAKERS = ["draftkings", "fanduel", "betmgm"]
 
 # ── NEW : Tank01 Fantasy Stats (RapidAPI) ────────────────────
 TANK01_API_KEY  = os.getenv("TANK01_API_KEY", "")
@@ -43,10 +43,8 @@ NBA_STATS_HEADERS = {
     "x-nba-stats-origin": "stats",
     "x-nba-stats-token":  "true",
 }
-# Saison courante (format NBA : "2024-25")
 NBA_CURRENT_SEASON   = "2024-25"
 NBA_SEASON_TYPE      = "Regular Season"
-# Nombre de derniers matchs pour recent_form
 NBA_FORM_LAST_N      = 10
 
 # ── Paramètres Moteur ─────────────────────────────────────────
@@ -68,5 +66,5 @@ FOUR_FACTORS_WEIGHTS = {
 }
 
 # ── Gemini ───────────────────────────────────────────────────
-GEMINI_MODEL      = "gemini-3-flash-preview"
+GEMINI_MODEL      = "gemini-3-flash-preview"   # ✏️ mis à jour
 GEMINI_MAX_TOKENS = 60000
