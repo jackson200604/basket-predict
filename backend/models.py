@@ -73,15 +73,16 @@ class MLResult(BaseModel):
     top_features:    List[str] = []
     form_score_home: float     = 0.0
     form_score_away: float     = 0.0
+    # ── Stacking LSTM + XGBoost ───────────────────────────────
+    stacking_detail: Optional[dict] = None
 
 
-# ── NEW : cotes en temps réel ─────────────────────────────────
 class LiveOdds(BaseModel):
-    odds_home:  float            # américain, ex: -150
-    odds_away:  float            # américain, ex: +130
-    bookmaker:  str
-    implied_home: float          # probabilité implicite home
-    implied_away: float          # probabilité implicite away
+    odds_home:    float
+    odds_away:    float
+    bookmaker:    str
+    implied_home: float
+    implied_away: float
 
 
 class PredictionResponse(BaseModel):
@@ -101,8 +102,6 @@ class PredictionResponse(BaseModel):
     four_factors: FourFactorsResult
     scenarios:    List[ScoreScenario]
     ml_result:    Optional[MLResult]  = None
-
-    # ── NEW ───────────────────────────────────────────────────
     live_odds:    Optional[LiveOdds]  = None
 
     bet_recommendations: List[BetRecommendation]
