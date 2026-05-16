@@ -25,31 +25,24 @@ def run_monte_carlo(
     σ_home = engine.home_std
     σ_away = engine.away_std
 
-    # Scores de base
     scores_home = rng.normal(μ_home, σ_home, n_sims)
     scores_away = rng.normal(μ_away, σ_away, n_sims)
 
-    # Variance adresse au tir
     scores_home += rng.normal(0, μ_home * 0.05, n_sims)
     scores_away += rng.normal(0, μ_away * 0.05, n_sims)
 
-    # Variance fautes
     scores_home += rng.normal(0, 2.0, n_sims)
     scores_away += rng.normal(0, 2.0, n_sims)
 
-    # Bruit Elo
     elo_noise    = rng.normal(0, 3.0, n_sims)
     scores_home += elo_noise
     scores_away -= elo_noise
 
-    # ── NEW : bruit de forme (time-decay) ─────────────────────
-    # La forme récente ajoute un biais faible mais réel sur la variance
     form_noise_home = rng.normal(engine.form_score_home * 0.1, 1.5, n_sims)
     form_noise_away = rng.normal(engine.form_score_away * 0.1, 1.5, n_sims)
     scores_home += form_noise_home
     scores_away += form_noise_away
 
-    # Plancher réaliste
     scores_home = np.maximum(scores_home, 70.0)
     scores_away = np.maximum(scores_away, 70.0)
 
@@ -76,63 +69,67 @@ def build_score_scenarios(
     engine: EngineResult,
 ) -> List[ScoreScenario]:
 
-    # Principal
     main = ScoreScenario(
         label      = "⚡ Principal (Baseline)",
         score_home = int(round(mc.avg_score_home)),
         score_away = int(round(mc.avg_score_away)),
         confidence = round(engine.confidence, 3),
     )
-
-    # Défensif Low Pace
     defensive = ScoreScenario(
         label      = "🛡️ Défensif (Low Pace)",
         score_home = int(round(mc.avg_score_home * 0.92 * 0.96)),
         score_away = int(round(mc.avg_score_away * 0.92 * 0.96)),
         confidence = round(engine.confidence * 0.80, 3),
     )
-
-    # Offensif High Pace
     offensive = ScoreScenario(
         label      = "🔥 Offensif (High Pace)",
         score_home = int(round(mc.avg_score_home * 1.08 * 1.03)),
         score_away = int(round(mc.avg_score_away * 1.08 * 1.03)),
         confidence = round(engine.confidence * 0.75, 3),
     )
-
     return [main, defensive, offensive]
 
 
 # =============================================================
-# 3. BLEND PROBABILITÉS  ← poids mis à jour avec ML
+# 3. BLEND PROBABILITÉS
 # =============================================================
 
 def blend_win_probability(
-    mc:           MonteCarloResult,
-    engine:       EngineResult,
-    ml_prob_home: float = 0.50,
+    mc:                  MonteCarloResult,
+    engine:              EngineResult,
+    ml_prob_home:        float = 0.50,   # XGBoost seul (fallback)
+    stacking_prob_home:  float = 0.50,   # Stacking LSTM + XGBoost
+    use_stacking:        bool  = False,
 ) -> tuple[float, float]:
     """
-    Nouvelle pondération :
-      40 % Monte Carlo  (simulations)
-      25 % Elo          (force historique)
-      20 % Four Factors (Dean Oliver)
-      15 % ML XGBoost   (apprentissage supervisé)
+    Avec stacking :
+      35 % Monte Carlo · 20 % Elo · 20 % Four Factors · 25 % Stacking LSTM+XGB
+
+    Sans stacking (fallback) :
+      40 % Monte Carlo · 25 % Elo · 20 % Four Factors · 15 % XGBoost seul
     """
     ff_prob_home = 0.50 + engine.four_factors_edge * 1.5
     ff_prob_home = max(0.05, min(0.95, ff_prob_home))
 
-    p_home = (
-        0.40 * mc.home_win_pct
-      + 0.25 * engine.elo_win_prob_home
-      + 0.20 * ff_prob_home
-      + 0.15 * ml_prob_home              # NEW
-    )
+    if use_stacking:
+        p_home = (
+            0.35 * mc.home_win_pct
+          + 0.20 * engine.elo_win_prob_home
+          + 0.20 * ff_prob_home
+          + 0.25 * stacking_prob_home
+        )
+    else:
+        p_home = (
+            0.40 * mc.home_win_pct
+          + 0.25 * engine.elo_win_prob_home
+          + 0.20 * ff_prob_home
+          + 0.15 * ml_prob_home
+        )
     return round(p_home, 4), round(1.0 - p_home, 4)
 
 
 # =============================================================
-# 4. VALUE BET — sans scipy (numpy pur)
+# 4. VALUE BET
 # =============================================================
 
 def _normal_cdf(x: float) -> float:
@@ -165,7 +162,6 @@ def detect_value_bet(
 
     bets: List[BetRecommendation] = []
 
-    # Principal Moneyline
     if prob_home_ai >= prob_away_ai:
         bets.append(BetRecommendation(
             label        = "🏆 Principal",
@@ -185,7 +181,6 @@ def detect_value_bet(
             is_value_bet = edge_away > 0.03,
         ))
 
-    # Spread
     score_diff  = mc.avg_score_home - mc.avg_score_away
     spread      = round(score_diff * 0.90, 1)
     spread_desc = (
@@ -204,7 +199,6 @@ def detect_value_bet(
         is_value_bet = False,
     ))
 
-    # Total Over/Under
     total_proj = mc.avg_score_home + mc.avg_score_away
     ou_line    = round(total_proj * 0.98, 1)
 
@@ -220,7 +214,6 @@ def detect_value_bet(
         is_value_bet = False,
     ))
 
-    # Value Bet
     best_edge = max(edge_home, edge_away)
     if best_edge > 0.03:
         value_team = team_home if edge_home > edge_away else team_away
@@ -242,17 +235,24 @@ def detect_value_bet(
 # =============================================================
 
 def run_full_simulation(
-    engine:    EngineResult,
-    team_home: str   = "Domicile",
-    team_away: str   = "Extérieur",
-    odds_home: float = -110,
-    odds_away: float = -110,
-    n_sims:    int   = MONTE_CARLO_SIMS,
-    ml_prob_home: float = 0.50,        # NEW : injecté depuis main.py
+    engine:              EngineResult,
+    team_home:           str   = "Domicile",
+    team_away:           str   = "Extérieur",
+    odds_home:           float = -110,
+    odds_away:           float = -110,
+    n_sims:              int   = MONTE_CARLO_SIMS,
+    ml_prob_home:        float = 0.50,
+    stacking_prob_home:  float = 0.50,
+    use_stacking:        bool  = False,
 ) -> dict:
 
     mc                   = run_monte_carlo(engine, n_sims=n_sims)
-    prob_home, prob_away = blend_win_probability(mc, engine, ml_prob_home)
+    prob_home, prob_away = blend_win_probability(
+        mc, engine,
+        ml_prob_home       = ml_prob_home,
+        stacking_prob_home = stacking_prob_home,
+        use_stacking       = use_stacking,
+    )
     mc.home_win_pct      = prob_home
     mc.away_win_pct      = prob_away
     scenarios            = build_score_scenarios(mc, engine)
@@ -267,4 +267,4 @@ def run_full_simulation(
         "bets":        bets,
         "prob_home":   prob_home,
         "prob_away":   prob_away,
-        }
+    }
