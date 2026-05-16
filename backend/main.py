@@ -9,7 +9,9 @@ from data_ingestion import collect_match_data
 from analytics_engine import run_analytics
 from monte_carlo import run_full_simulation, compute_implied_probability
 from ml_model import predict_ml
-from api_clients import get_odds   # NEW
+from lstm_model import predict_lstm, load_lstm_at_startup
+from stacking_ensemble import run_stacking, stacking_log
+from api_clients import get_odds
 
 app = FastAPI(
     title       = "🏀 BasketPredictAI",
@@ -26,8 +28,13 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup_event():
+    import asyncio
     from ml_model import _load_model
+    loop = asyncio.get_event_loop()
+    # XGBoost : chargement rapide, synchrone OK
     _load_model()
+    # LSTM : peut entraîner ~30s si .keras absent → thread séparé
+    await loop.run_in_executor(None, load_lstm_at_startup)
 
 
 @app.get("/")
@@ -48,7 +55,7 @@ async def predict(req: MatchRequest):
                 team_home=req.team_home, team_away=req.team_away,
                 league=req.league or "NBA", match_date=req.match_date,
             ),
-            get_odds(req.team_home, req.team_away),   # NEW
+            get_odds(req.team_home, req.team_away),
         )
 
         # ── 2. Moteur analytique ──────────────────────────────
@@ -56,19 +63,27 @@ async def predict(req: MatchRequest):
             home=data["home_stats"], away=data["away_stats"],
         )
 
-        # ── 3. ML XGBoost ─────────────────────────────────────
-        ml_output = predict_ml(
+        # ── 3. ML XGBoost + LSTM → Stacking Ensemble ─────────
+        ml_output   = predict_ml(
             engine=engine,
             form_home=engine.form_score_home,
             form_away=engine.form_score_away,
         )
+        lstm_output  = predict_lstm(
+            form_home=data["home_stats"].recent_form,
+            form_away=data["away_stats"].recent_form,
+        )
+        stack_output = run_stacking(ml_output, lstm_output)
+        print(stacking_log(stack_output))
+
         ml_result = MLResult(
-            home_win_prob   = ml_output["home_win_prob"],
-            away_win_prob   = ml_output["away_win_prob"],
-            model_used      = ml_output["model_used"],
-            top_features    = ml_output["top_features"],
+            home_win_prob   = stack_output["stacked_prob_home"],
+            away_win_prob   = stack_output["stacked_prob_away"],
+            model_used      = stack_output["model_used"],
+            top_features    = stack_output["top_features"],
             form_score_home = engine.form_score_home,
             form_score_away = engine.form_score_away,
+            stacking_detail = stack_output["stacking_detail"],
         )
 
         # ── 4. Cotes réelles (avec fallback -110/-110) ────────
@@ -87,14 +102,15 @@ async def predict(req: MatchRequest):
                 implied_away = round(compute_implied_probability(odds_away), 4),
             )
 
-        # ── 5. Monte Carlo (blend + value bet sur vraies cotes) 
+        # ── 5. Monte Carlo (blend + value bet sur vraies cotes)
         simulation = run_full_simulation(
-            engine       = engine,
-            team_home    = req.team_home,
-            team_away    = req.team_away,
-            odds_home    = odds_home,   # réel ou -110
-            odds_away    = odds_away,   # réel ou -110
-            ml_prob_home = ml_output["home_win_prob"],
+            engine             = engine,
+            team_home          = req.team_home,
+            team_away          = req.team_away,
+            odds_home          = odds_home,
+            odds_away          = odds_away,
+            stacking_prob_home = stack_output["stacked_prob_home"],
+            use_stacking       = True,
         )
 
         # ── 6. Réponse ────────────────────────────────────────
@@ -113,7 +129,7 @@ async def predict(req: MatchRequest):
             four_factors  = engine.four_factors,
             scenarios     = simulation["scenarios"],
             ml_result     = ml_result,
-            live_odds     = live_odds,              # NEW
+            live_odds     = live_odds,
             bet_recommendations = simulation["bets"],
             confidence_global   = engine.confidence,
             data_sources        = data["data_sources"],
@@ -141,4 +157,4 @@ def get_example():
             '-H "Content-Type: application/json" '
             '-d \'{"team_home":"Lakers","team_away":"Celtics","league":"NBA"}\''
         ),
-            }
+    }
